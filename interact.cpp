@@ -13,7 +13,7 @@
 #include "binhash.hpp"
 
 /* Define this to use the bucketing version of the code */
-/* #define USE_BUCKETING */
+#define USE_BUCKETING 
 
 /*@T
  * \subsection{Density computations}
@@ -61,6 +61,28 @@ void compute_density(sim_state_t* s, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    for(int i=0;i<n;++i){
+        particle_t *pi = s->part + i;
+        pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
+
+        //get the neighbors
+        unsigned neighbor_bins[27];
+        unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
+
+        // iterate over the neigboring bins
+        // Your code here
+        for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
+                //To avoid symmetry we use spatial lexicographic ordering
+                if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
+                    pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
+    
+                    update_density(pi,pj,h2,C);   
+                }
+
+            }
+        }
+    }
 #else
     for (int i = 0; i < n; ++i) {
         particle_t* pi = s->part+i;
@@ -152,6 +174,26 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    for(int i=0;i<n;++i){
+        particle_t *pi = p + i;
+
+        //get the neighbors
+        unsigned neighbor_bins[27];
+        unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
+
+        // iterate over the neigboring bins
+        // Your code here
+        for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
+                //To avoid symmetry we use spatial lexicographic ordering
+                if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
+                    pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
+                    update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+                }
+
+            }
+        }
+    }
 #else
     for (int i = 0; i < n; ++i) {
         particle_t* pi = p+i;
