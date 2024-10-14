@@ -2,6 +2,7 @@
 
 #include "zmorton.hpp"
 #include "binhash.hpp"
+#include <stdlib.h>
 
 /*@q
  * ====================================================================
@@ -44,19 +45,60 @@ unsigned particle_neighborhood(unsigned* buckets, particle_t* p, float h)
     return bin_index;
 }
 
-void hash_particles(sim_state_t* s, float h)
-{
-    /* BEGIN TASK */
-    /* END TASK */
+// void hash_particles(sim_state_t* s, float h)
+// {
+//     /* BEGIN TASK */
+//     /* END TASK */
 
-    // clear hashmap at every time step
-    memset(s->hash, 0, HASH_SIZE * sizeof(particle_t*));
+//     // clear hashmap at every time step
+//     memset(s->hash, 0, HASH_SIZE * sizeof(particle_t*));
     
-    //populating the hashmap
-    for (int i = 0; i < s->n; ++i) {
-        particle_t *p = s->part + i;
-        unsigned b = particle_bucket(p, h, 0, 0, 0);
-        p->next = s->hash[b];
-        s->hash[b] = p;
+//     //populating the hashmap
+//     for (int i = 0; i < s->n; ++i) {
+//         particle_t *p = s->part + i;
+//         unsigned b = particle_bucket(p, h, 0, 0, 0);
+//         p->next = s->hash[b];
+//         s->hash[b] = p;
+//     }
+// }
+void hash_particles(sim_state_t* s, float h) {
+    int n = s->n;
+
+    // Clear the global hash map
+    memset(s->hash, 0, HASH_SIZE * sizeof(particle_t*));
+
+    // Allocate thread-local hash tables (one per thread)
+    #pragma omp parallel
+    {
+        particle_t** local_hash = (particle_t**) calloc(HASH_SIZE, sizeof(particle_t*));
+
+        #pragma omp for
+        for (int i = 0; i < n; ++i) {
+            particle_t* p = s->part + i;
+            unsigned b = particle_bucket(p, h, 0, 0, 0);
+
+            // Add particle to local hash table
+            p->next = local_hash[b];
+            local_hash[b] = p;
+        }
+
+        // Critical section to merge local hash into global hash table
+        #pragma omp critical
+        {
+            for (unsigned b = 0; b < HASH_SIZE; ++b) {
+                if (local_hash[b] != NULL) {
+                    particle_t* p = local_hash[b];
+                    while (p != NULL) {
+                        particle_t* next = p->next;
+                        p->next = s->hash[b];
+                        s->hash[b] = p;
+                        p = next;
+                    }
+                }
+            }
+        }
+
+        // Free thread-local hash table
+        free(local_hash);
     }
 }
