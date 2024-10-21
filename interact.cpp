@@ -33,6 +33,7 @@
  * way that $j$ contributes to $i$).
  *@c*/
 
+/*
 inline
 void update_density(particle_t* pi, particle_t* pj, float h2, float C)
 {
@@ -44,6 +45,7 @@ void update_density(particle_t* pi, particle_t* pj, float h2, float C)
         pj->rho += rho_ij;
     }
 }
+*/
 /*
 void log_particle_data(std::ofstream& log_file, particle_t* p, int n) {
     for (int i = 0; i < n; ++i) {
@@ -66,6 +68,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     float C  = ( 315.0/64.0/M_PI ) * s->mass / h9;
 
     // Clear densities
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i)
         p[i].rho = 0;
 
@@ -73,6 +76,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    #pragma omp parallel for
     for(int i=0;i<n;++i){
         particle_t *pi = s->part + i;
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
@@ -93,7 +97,16 @@ void compute_density(sim_state_t* s, sim_param_t* params)
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
                     
-                    update_density(pi,pj,h2,C);   
+                    //update_density(pi,pj,h2,C);   
+                    float r2 = vec3_dist2(pi->x, pj->x);
+                    float z  = h2-r2;
+                    if (z > 0) {
+                        float rho_ij = C*z*z*z;
+                        #pragma omp atomic
+                        pi->rho += rho_ij;
+                        #pragma omp atomic
+                        pj->rho += rho_ij;
+                    }
                 }
 
             }
