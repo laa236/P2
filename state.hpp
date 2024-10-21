@@ -13,6 +13,7 @@
  * for the local simulation state.
  *@c*/
 typedef struct particle_t {
+    unsigned id;
     float rho;         /* Particle density   */
     float x[3];        /* Particle positions */
     float v[3];        /* Particle velocities (full step) */

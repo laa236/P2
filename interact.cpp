@@ -5,6 +5,8 @@
 #include <assert.h>
 #include <fstream>
 #include <iostream>
+//#include <vector>
+//#include <algorithm>
 
 #include "vec3.hpp"
 #include "zmorton.hpp"
@@ -42,14 +44,14 @@ void update_density(particle_t* pi, particle_t* pj, float h2, float C)
         pj->rho += rho_ij;
     }
 }
-
+/*
 void log_particle_data(std::ofstream& log_file, particle_t* p, int n) {
     for (int i = 0; i < n; ++i) {
         log_file << "Particle " << i << ": "
                  << "Density Before: " << p[i].rho << ", "
                  << "Forces Before: (" << p[i].a[0] << ", " << p[i].a[1] << ", " << p[i].a[2] << ")\n";
     }
-}
+}*/
 
 void compute_density(sim_state_t* s, sim_param_t* params)
 {
@@ -76,7 +78,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
 
         //get the neighbors
-        unsigned neighbor_bins[27];
+        int neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
@@ -201,8 +203,10 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
     for(int i=0;i<n;++i){
         particle_t *pi = p + i;
 
+        //std::vector<std::string> duplicate_checker;
+
         //get the neighbors
-        unsigned neighbor_bins[27];
+        int neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
@@ -214,6 +218,12 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
                     update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+
+                    //auto it = std::find(duplicate_checker.begin(), duplicate_checker.end(), std::to_string(pi->id) + "_" + std::to_string(pj->id));
+                    //if (it != duplicate_checker.end()) {
+                    //    printf("FOUND DUPLICATE A: %d-%d-%d\n", pi->id, pj->id, neighbor_bins[bin_idx]);
+                    //} 
+                    //duplicate_checker.push_back(std::to_string(pi->id) + "_" + std::to_string(pj->id));
                 }
 
             }

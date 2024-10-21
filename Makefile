@@ -55,6 +55,7 @@ clean:
 	rm -f codes.tex check_derivation.tex
 	rm -f main.log main.aux main.out main.toc
 	rm -f derivation.log derivation.aux derivation.out
+	rm -f TEST.txt text.txt
 
 realclean: clean
 	rm -f main.pdf derivation.pdf *.x run.out *.pov
