@@ -84,6 +84,9 @@ void hash_particles(sim_state_t* s, float h)
     for (int i = 0; i < s->n; ++i) {
         particle_t *p = s->part + i;
         unsigned b = particle_bucket(p, h, 0, 0, 0);
+        if (b == -1 || b >= HASH_SIZE) {
+            continue; // Skip invalid indices
+        }
         p->next = s->hash[b];
         s->hash[b] = p;
     }
