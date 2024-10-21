@@ -201,6 +201,7 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
     // log_file.close();
 
     // Start with gravity and surface forces
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i)
         vec3_set(p[i].a,  0, -g, 0);
 
@@ -213,6 +214,7 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    #pragma omp parallel for
     for(int i=0;i<n;++i){
         particle_t *pi = p + i;
 
@@ -230,7 +232,54 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
                 //To avoid symmetry we use spatial lexicographic ordering
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
-                    update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+                    //update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+                    
+                    float dx[3];
+                    vec3_diff(dx, pi->x, pj->x);
+                    float r2 = vec3_len2(dx);
+                    if (r2 < h2) {
+                        const float rhoi = pi->rho;
+                        const float rhoj = pj->rho;
+                        float q = sqrt(r2/h2);
+                        float u = 1-q;
+                        float w0 = C0 * u/rhoi/rhoj;
+                        float wp = w0 * Cp * (rhoi+rhoj-2*rho0) * u/q;
+                        float wv = w0 * Cv;
+                        float dv[3];
+                        vec3_diff(dv, pi->v, pj->v);
+
+                        // Equal and opposite pressure forces
+                        //vec3_saxpy(pi->a,  wp, dx);
+                        #pragma omp atomic
+                        pi->a[0] += wp*dx[0];
+                        #pragma omp atomic
+                        pi->a[1] += wp*dx[1];
+                        #pragma omp atomic
+                        pi->a[2] += wp*dx[2];
+                        //vec3_saxpy(pj->a, -wp, dx);
+                        #pragma omp atomic
+                        pj->a[0] += -wp*dx[0];
+                        #pragma omp atomic
+                        pj->a[1] += -wp*dx[1];
+                        #pragma omp atomic
+                        pj->a[2] += -wp*dx[2];
+
+                        // Equal and opposite viscosity forces
+                        //vec3_saxpy(pi->a,  wv, dv);
+                        #pragma omp atomic
+                        pi->a[0] += wv*dv[0];
+                        #pragma omp atomic
+                        pi->a[1] += wv*dv[1];
+                        #pragma omp atomic
+                        pi->a[2] += wv*dv[2];
+                        //vec3_saxpy(pj->a, -wv, dv);
+                        #pragma omp atomic
+                        pj->a[0] += -wv*dv[0];
+                        #pragma omp atomic
+                        pj->a[1] += -wv*dv[1];
+                        #pragma omp atomic
+                        pj->a[2] += -wv*dv[2];
+                    }
 
                     //auto it = std::find(duplicate_checker.begin(), duplicate_checker.end(), std::to_string(pi->id) + "_" + std::to_string(pj->id));
                     //if (it != duplicate_checker.end()) {
