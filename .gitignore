@@ -7,3 +7,4 @@ interact.o
 io_txt.o
 params.o
 run.out
+test.txt
