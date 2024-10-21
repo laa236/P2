@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <fstream>
+#include <iostream>
 
 #include "vec3.hpp"
 #include "zmorton.hpp"
@@ -41,6 +43,14 @@ void update_density(particle_t* pi, particle_t* pj, float h2, float C)
     }
 }
 
+void log_particle_data(std::ofstream& log_file, particle_t* p, int n) {
+    for (int i = 0; i < n; ++i) {
+        log_file << "Particle " << i << ": "
+                 << "Density Before: " << p[i].rho << ", "
+                 << "Forces Before: (" << p[i].a[0] << ", " << p[i].a[1] << ", " << p[i].a[2] << ")\n";
+    }
+}
+
 void compute_density(sim_state_t* s, sim_param_t* params)
 {
     int n = s->n;
@@ -52,6 +62,10 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     float h3 = h2*h;
     float h9 = h3*h3*h3;
     float C  = ( 315.0/64.0/M_PI ) * s->mass / h9;
+
+    // std::ofstream log_file("density_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
 
     // Clear densities
     for (int i = 0; i < n; ++i)
@@ -66,17 +80,21 @@ void compute_density(sim_state_t* s, sim_param_t* params)
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
 
         //get the neighbors
-        unsigned neighbor_bins[27];
+        int neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
         // Your code here
         for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            if(neighbor_bins[bin_idx]==-1){
+                // std::cout<<"hello"<<std::endl;
+                continue;
+            }
             for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
                 //To avoid symmetry we use spatial lexicographic ordering
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
-    
+                    
                     update_density(pi,pj,h2,C);   
                 }
 
@@ -93,6 +111,11 @@ void compute_density(sim_state_t* s, sim_param_t* params)
         }
     }
 #endif
+
+    // Log densities after computation
+    // std::ofstream log_file("density_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
 }
 
 
@@ -161,6 +184,11 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
     // Compute density and color
     compute_density(state, params);
 
+    // Log forces before computation
+    // std::ofstream log_file("force_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
+
     // Start with gravity and surface forces
     for (int i = 0; i < n; ++i)
         vec3_set(p[i].a,  0, -g, 0);
@@ -184,6 +212,7 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
         // iterate over the neigboring bins
         // Your code here
         for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            if(neighbor_bins[bin_idx]==-1) continue;
             for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
                 //To avoid symmetry we use spatial lexicographic ordering
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
@@ -203,5 +232,12 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
         }
     }
 #endif
+
+    // Log forces after computation
+    // log_file.open("force_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
 }
+
+
 
