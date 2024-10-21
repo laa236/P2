@@ -63,10 +63,6 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     float h9 = h3*h3*h3;
     float C  = ( 315.0/64.0/M_PI ) * s->mass / h9;
 
-    // std::ofstream log_file("density_log.txt", std::ios::app);
-    // log_particle_data(log_file, p, n);
-    // log_file.close();
-
     // Clear densities
     for (int i = 0; i < n; ++i)
         p[i].rho = 0;
@@ -80,7 +76,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
 
         //get the neighbors
-        int neighbor_bins[27];
+        unsigned neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
