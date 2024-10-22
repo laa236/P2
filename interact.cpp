@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <fstream>
 #include <iostream>
+#include <omp.h>
 //#include <vector>
 //#include <algorithm>
 
@@ -79,6 +80,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     #pragma omp parallel for
     for(int i=0;i<n;++i){
         particle_t *pi = s->part + i;
+        #pragma omp atomic
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
 
         //get the neighbors
