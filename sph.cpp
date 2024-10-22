@@ -153,13 +153,13 @@ int main(int argc, char** argv)
     int npframe = params.npframe;
     float dt    = params.dt;
     int n       = state->n;
-
+    /*
     for (int i = 0; i < state->n; i++) {
         particle_t *p = state->part + i;
         p->id = i;
         printf(std::to_string(i).c_str());
     }
-    
+    */
     double t_start = omp_get_wtime();
     //write_header(fp, n);
     write_header(fp, n, nframes, params.h);
