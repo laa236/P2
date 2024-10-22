@@ -43,8 +43,8 @@
 #define HASH_SIZE (HASH_DIM*HASH_DIM*HASH_DIM)
 #define MAX_NBR_BINS 27
 
-unsigned particle_bucket(particle_t* p, float h);
-unsigned particle_neighborhood(unsigned* buckets, particle_t* p, float h);
+int particle_bucket(particle_t* p, float h);
+unsigned particle_neighborhood(int* buckets, particle_t* p, float h);
 void hash_particles(sim_state_t* s, float h);
 
 /*@q*/

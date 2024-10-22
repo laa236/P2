@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <fstream>
+#include <iostream>
+#include <omp.h>
+//#include <vector>
+//#include <algorithm>
 
 #include "vec3.hpp"
 #include "zmorton.hpp"
@@ -29,6 +34,7 @@
  * way that $j$ contributes to $i$).
  *@c*/
 
+/*
 inline
 void update_density(particle_t* pi, particle_t* pj, float h2, float C)
 {
@@ -40,6 +46,15 @@ void update_density(particle_t* pi, particle_t* pj, float h2, float C)
         pj->rho += rho_ij;
     }
 }
+*/
+/*
+void log_particle_data(std::ofstream& log_file, particle_t* p, int n) {
+    for (int i = 0; i < n; ++i) {
+        log_file << "Particle " << i << ": "
+                 << "Density Before: " << p[i].rho << ", "
+                 << "Forces Before: (" << p[i].a[0] << ", " << p[i].a[1] << ", " << p[i].a[2] << ")\n";
+    }
+}*/
 
 void compute_density(sim_state_t* s, sim_param_t* params)
 {
@@ -54,6 +69,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     float C  = ( 315.0/64.0/M_PI ) * s->mass / h9;
 
     // Clear densities
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i)
         p[i].rho = 0;
 
@@ -61,23 +77,38 @@ void compute_density(sim_state_t* s, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    #pragma omp parallel for
     for(int i=0;i<n;++i){
         particle_t *pi = s->part + i;
+        #pragma omp atomic
         pi->rho += ( 315.0/64.0/M_PI ) * s->mass / h3;
 
         //get the neighbors
-        unsigned neighbor_bins[27];
+        int neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
         // Your code here
         for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            if(neighbor_bins[bin_idx]==-1){
+                // std::cout<<"hello"<<std::endl;
+                continue;
+            }
             for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
                 //To avoid symmetry we use spatial lexicographic ordering
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
-    
-                    update_density(pi,pj,h2,C);   
+                    
+                    //update_density(pi,pj,h2,C);   
+                    float r2 = vec3_dist2(pi->x, pj->x);
+                    float z  = h2-r2;
+                    if (z > 0) {
+                        float rho_ij = C*z*z*z;
+                        #pragma omp atomic
+                        pi->rho += rho_ij;
+                        #pragma omp atomic
+                        pj->rho += rho_ij;
+                    }
                 }
 
             }
@@ -93,6 +124,11 @@ void compute_density(sim_state_t* s, sim_param_t* params)
         }
     }
 #endif
+
+    // Log densities after computation
+    // std::ofstream log_file("density_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
 }
 
 
@@ -161,7 +197,13 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
     // Compute density and color
     compute_density(state, params);
 
+    // Log forces before computation
+    // std::ofstream log_file("force_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
+
     // Start with gravity and surface forces
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i)
         vec3_set(p[i].a,  0, -g, 0);
 
@@ -174,21 +216,78 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
 #ifdef USE_BUCKETING
     /* BEGIN TASK */
     /* END TASK */
+    #pragma omp parallel for
     for(int i=0;i<n;++i){
         particle_t *pi = p + i;
 
+        //std::vector<std::string> duplicate_checker;
+
         //get the neighbors
-        unsigned neighbor_bins[27];
+        int neighbor_bins[27];
         unsigned num_bins = particle_neighborhood(neighbor_bins, pi, params->h);
 
         // iterate over the neigboring bins
         // Your code here
         for(unsigned bin_idx = 0; bin_idx < num_bins; ++bin_idx){
+            if(neighbor_bins[bin_idx]==-1) continue;
             for (particle_t* pj = hash[neighbor_bins[bin_idx]]; pj != NULL; pj = pj->next){
                 //To avoid symmetry we use spatial lexicographic ordering
                 if (pj->x[0] != pi->x[0] ? pj->x[0] > pi->x[0] : (
                     pj->x[1] != pi->x[1] ? pj->x[1] > pi->x[1] : pj->x[2] > pi->x[2])) {
-                    update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+                    //update_forces(pi, pj, h2, rho0, C0, Cp, Cv);  
+                    
+                    float dx[3];
+                    vec3_diff(dx, pi->x, pj->x);
+                    float r2 = vec3_len2(dx);
+                    if (r2 < h2) {
+                        const float rhoi = pi->rho;
+                        const float rhoj = pj->rho;
+                        float q = sqrt(r2/h2);
+                        float u = 1-q;
+                        float w0 = C0 * u/rhoi/rhoj;
+                        float wp = w0 * Cp * (rhoi+rhoj-2*rho0) * u/q;
+                        float wv = w0 * Cv;
+                        float dv[3];
+                        vec3_diff(dv, pi->v, pj->v);
+
+                        // Equal and opposite pressure forces
+                        //vec3_saxpy(pi->a,  wp, dx);
+                        #pragma omp atomic
+                        pi->a[0] += wp*dx[0];
+                        #pragma omp atomic
+                        pi->a[1] += wp*dx[1];
+                        #pragma omp atomic
+                        pi->a[2] += wp*dx[2];
+                        //vec3_saxpy(pj->a, -wp, dx);
+                        #pragma omp atomic
+                        pj->a[0] += -wp*dx[0];
+                        #pragma omp atomic
+                        pj->a[1] += -wp*dx[1];
+                        #pragma omp atomic
+                        pj->a[2] += -wp*dx[2];
+
+                        // Equal and opposite viscosity forces
+                        //vec3_saxpy(pi->a,  wv, dv);
+                        #pragma omp atomic
+                        pi->a[0] += wv*dv[0];
+                        #pragma omp atomic
+                        pi->a[1] += wv*dv[1];
+                        #pragma omp atomic
+                        pi->a[2] += wv*dv[2];
+                        //vec3_saxpy(pj->a, -wv, dv);
+                        #pragma omp atomic
+                        pj->a[0] += -wv*dv[0];
+                        #pragma omp atomic
+                        pj->a[1] += -wv*dv[1];
+                        #pragma omp atomic
+                        pj->a[2] += -wv*dv[2];
+                    }
+
+                    //auto it = std::find(duplicate_checker.begin(), duplicate_checker.end(), std::to_string(pi->id) + "_" + std::to_string(pj->id));
+                    //if (it != duplicate_checker.end()) {
+                    //    printf("FOUND DUPLICATE A: %d-%d-%d\n", pi->id, pj->id, neighbor_bins[bin_idx]);
+                    //} 
+                    //duplicate_checker.push_back(std::to_string(pi->id) + "_" + std::to_string(pj->id));
                 }
 
             }
@@ -203,5 +302,12 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
         }
     }
 #endif
+
+    // Log forces after computation
+    // log_file.open("force_log.txt", std::ios::app);
+    // log_particle_data(log_file, p, n);
+    // log_file.close();
 }
+
+
 
