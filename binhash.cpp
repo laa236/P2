@@ -5,8 +5,7 @@
 #include "zmorton.hpp"
 #include "binhash.hpp"
 #include "state.hpp"
-#include <cmath>
-#include <omp.h>
+
 /*@q
  * ====================================================================
  */
@@ -24,17 +23,23 @@
 
 #define HASH_MASK (HASH_DIM-1)
 
-inline int particle_bucket(float fx, float fy, float fz, float h, int xd, int yd, int zd,int bound)
+int particle_bucket(particle_t* p, float h, int xd, int yd, int zd)
 {
-    // Fast float-to-int conversion using floorf and casting
-    int ix = (int)floorf(fx) + xd;
-    int iy = (int)floorf(fy) + yd;
-    int iz = (int)floorf(fz) + zd;
+    // Calculate indices
+    int ix = static_cast<int>(p->x[0] / h) + xd;
+    int iy = static_cast<int>(p->x[1] / h) + yd;
+    int iz = static_cast<int>(p->x[2] / h) + zd;
 
-    // Branchless check for negative indices and upper boundary
-    if ((unsigned int)ix >= (unsigned int)bound ||
-        (unsigned int)iy >= (unsigned int)bound ||
-        (unsigned int)iz >= (unsigned int)bound) {
+    // Check for negative indices
+    if (ix < 0 || iy < 0 || iz < 0) {
+        //printf("BAD BUCKET = %f,%f,%f div %f + %d,%d,%d = %d,%d,%d\n",p->x[0],p->x[1],p->x[2],h,xd,yd,zd,ix,iy,iz);
+        return -1; // Return an invalid bucket index
+    }
+    int bound = (1/h)+1;
+    // Check for upper boundary conditions
+    if (ix >= bound || iy >= bound || iz >= bound) {
+        // std::cout << "Upper boundary index detected: ix=" << ix << ", iy=" << iy << ", iz=" << iz << "\n";
+        //printf("BAD BUCKET = %f,%f,%f div %f + %d,%d,%d = %d,%d,%d\n",p->x[0],p->x[1],p->x[2],h,xd,yd,zd,ix,iy,iz);
         return -1; // Return an invalid bucket index
     }
 
@@ -43,8 +48,12 @@ inline int particle_bucket(float fx, float fy, float fz, float h, int xd, int yd
     iy &= HASH_MASK;
     iz &= HASH_MASK;
 
+    // Print the masked indices
+    // std::cout << "Masked indices: ix=" << ix << ", iy=" << iy << ", iz=" << iz << "\n";
+
     // Encode the indices
     int bucket = zm_encode(ix, iy, iz);
+    // std::cout << "Encoded bucket: " << bucket << "\n";
 
     return bucket;
 }
@@ -52,108 +61,35 @@ inline int particle_bucket(float fx, float fy, float fz, float h, int xd, int yd
 unsigned particle_neighborhood(int* buckets, particle_t* p, float h)
 {
     unsigned bin_index = 0;
-    // Precompute reciprocal of h
-    float inv_h = 1.0f / h;
-    // Precompute bound as an integer
-    int bound = (int)(inv_h) + 1;
-    // Calculate indices using multiplication instead of division
-    float fx = p->x[0] * inv_h;
-    float fy = p->x[1] * inv_h;
-    float fz = p->x[2] * inv_h;
-
-        // Define the 27 neighbor offsets as a compile-time constant
-    static const int offsets[27][3] = {
-        {-1, -1, -1}, {-1, -1,  0}, {-1, -1,  1},
-        {-1,  0, -1}, {-1,  0,  0}, {-1,  0,  1},
-        {-1,  1, -1}, {-1,  1,  0}, {-1,  1,  1},
-        { 0, -1, -1}, { 0, -1,  0}, { 0, -1,  1},
-        { 0,  0, -1}, { 0,  0,  0}, { 0,  0,  1},
-        { 0,  1, -1}, { 0,  1,  0}, { 0,  1,  1},
-        { 1, -1, -1}, { 1, -1,  0}, { 1, -1,  1},
-        { 1,  0, -1}, { 1,  0,  0}, { 1,  0,  1},
-        { 1,  1, -1}, { 1,  1,  0}, { 1,  1,  1}
-    };
-    // Iterate through the offsets and compute bucket indices
-    for(int n = 0; n < 27; ++n)
-    {
-        const int i = offsets[n][0];
-        const int j = offsets[n][1];
-        const int k = offsets[n][2];
-        buckets[bin_index++] = particle_bucket(fx, fy, fz, h, i, j, k, bound);
+    for (int i = -1; i < 2; ++i) {
+        for (int j = -1; j < 2; ++j) {
+            for (int k = -1; k < 2; ++k) {
+                buckets[bin_index] = particle_bucket(p, h, i, j, k);
+                bin_index++;
+            }
+        }
     }
     return bin_index;
 }
 
+
 void hash_particles(sim_state_t* s, float h)
 {
-    // Initialize per-bucket locks
-    static omp_lock_t locks[HASH_SIZE];
-    static bool locks_initialized = false;
+    /* BEGIN TASK */
+    /* END TASK */
 
-    #pragma omp parallel
-    {
-        #pragma omp single
-        {
-            if (!locks_initialized) {
-                for (int i = 0; i < HASH_SIZE; ++i) {
-                    omp_init_lock(&locks[i]);
-                }
-                locks_initialized = true;
-            }
-        }
-    }
-
-    // Clear hashmap in parallel
-    #pragma omp parallel for schedule(static)
-    for (int i = 0; i < HASH_SIZE; ++i) {
-        s->hash[i] = nullptr;
-    }
-
-    // Populating the hashmap in parallel
-    #pragma omp parallel for schedule(dynamic, 1000)
+    // Clear hashmap at every time step
+    memset(s->hash, 0, HASH_SIZE * sizeof(particle_t*));
+    
+    // Populating the hashmap
     for (int i = 0; i < s->n; ++i) {
-        particle_t* p = s->part + i;
-
-        // Precompute reciprocal of h and bound
-        float inv_h = 1.0f / h;
-        int bound = (int)(inv_h) + 1;
-
-        // Calculate indices
-        float fx = p->x[0] * inv_h;
-        float fy = p->x[1] * inv_h;
-        float fz = p->x[2] * inv_h;
-        int b = particle_bucket(fx, fy, fz, h,0,0,0, bound);
-
+        particle_t *p = s->part + i;
+        int b = particle_bucket(p, h, 0, 0, 0);
         if (b == -1 || b >= HASH_SIZE) {
+            printf("BAD HASH BUCKET, %f %f %f MATH %d %d %d\n",p->x[0],p->x[1],p->x[2],static_cast<int>(p->x[0] / h),static_cast<int>(p->x[1] / h),static_cast<int>(p->x[2] / h));
             continue; // Skip invalid indices
         }
-
-        // Lock the bucket, update it, and unlock
-        omp_set_lock(&locks[b]);
         p->next = s->hash[b];
         s->hash[b] = p;
-        omp_unset_lock(&locks[b]);
     }
-
-    // Locks can be destroyed at the end of the program if necessary
 }
-// void hash_particles(sim_state_t* s, float h)
-// {
-//     /* BEGIN TASK */
-//     /* END TASK */
-
-//     // Clear hashmap at every time step
-//     memset(s->hash, 0, HASH_SIZE * sizeof(particle_t*));
-    
-//     // Populating the hashmap
-//     for (int i = 0; i < s->n; ++i) {
-//         particle_t *p = s->part + i;
-//         int b = particle_bucket(p, h, 0, 0, 0);
-//         if (b == -1 || b >= HASH_SIZE) {
-//             printf("BAD HASH BUCKET, %f %f %f MATH %d %d %d\n",p->x[0],p->x[1],p->x[2],static_cast<int>(p->x[0] / h),static_cast<int>(p->x[1] / h),static_cast<int>(p->x[2] / h));
-//             continue; // Skip invalid indices
-//         }
-//         p->next = s->hash[b];
-//         s->hash[b] = p;
-//     }
-// }
