@@ -104,7 +104,7 @@ void hash_particles(sim_state_t* s, float h)
     }
 
     // Clear hashmap in parallel
-    #pragma omp parallel for schedule(static)
+    //#pragma omp parallel for schedule(static)
     for (int i = 0; i < HASH_SIZE; ++i) {
         s->hash[i] = nullptr;
     }

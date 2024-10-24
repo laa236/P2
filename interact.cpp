@@ -69,7 +69,7 @@ void compute_density(sim_state_t* s, sim_param_t* params)
     float C  = ( 315.0/64.0/M_PI ) * s->mass / h9;
 
     // Clear densities
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < n; ++i)
         p[i].rho = 0;
 
@@ -203,7 +203,7 @@ void compute_accel(sim_state_t* state, sim_param_t* params)
     // log_file.close();
 
     // Start with gravity and surface forces
-    #pragma omp parallel for schedule(dynamic)
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < n; ++i)
         vec3_set(p[i].a,  0, -g, 0);
 
